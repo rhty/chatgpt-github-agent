@@ -10,8 +10,7 @@ fi
 printf '\nGitHub と OpenAI で取得した情報を、Mac 内だけに保存します。\n\n'
 read -r -p 'GitHub App ID（数字。Client IDではありません）: ' app_id
 [[ "$app_id" =~ ^[0-9]+$ ]] || { echo 'App IDは数字を入力してください。'; exit 1; }
-read -r -p '最初のリポジトリ [mamama-dev/ai-sandbox-check]: ' repo
-repo=${repo:-mamama-dev/ai-sandbox-check}
+read -r -p '最初のリポジトリ（owner/repository）: ' repo
 [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo 'owner/repository の形式で入力してください。'; exit 1; }
 read -r -p 'Tunnel ID（tunnel_...）: ' tunnel
 [[ "$tunnel" =~ ^tunnel_[0-9a-f]{32}$ ]] || { echo 'Tunnel IDの形式を確認してください。'; exit 1; }
