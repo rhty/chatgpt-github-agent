@@ -1,0 +1,2 @@
+# v1-compatible FastMCP adapter. Do not change the major without adapter tests.
+mcp==1.30.0

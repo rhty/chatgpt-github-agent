@@ -1,0 +1,25 @@
+接続した「GitHub Dev Agent」のMCPを使って、導入確認をしてください。
+ChatGPT内蔵のコード実行環境や、別のGitHub接続ではなく、このMCPを使ってください。
+
+対象: mamama-dev/ai-sandbox-check
+作業ID: connection-test
+
+最初にsystem_statusを確認してください。異常があれば、作業を進めず内容を説明してください。
+start_taskで作業コピーを作り、READMEと、あればAGENTS.mdを読んでください。
+
+docs/connection-test.md を新規作成し、次の内容を書いてください。
+
+# 接続テスト
+ChatGPTから作業コピーを編集し、GitHub App経由でPRを作成する確認です。
+
+start_commandで、ファイルが存在してUTF-8で読み取れ、上記の内容が入っていることを
+Pythonのassertなどで確認してください。get_jobで終了コード0と出力を確認してください。
+この確認をアプリ全体のテスト成功と言い換えないでください。
+
+publish_prで「接続テスト」というタイトルのDraft PRを作成してください。
+本文には変更内容と、実際に行った検証を記載してください。
+Draftがこのリポジトリで利用できないというAPIエラーの場合は、
+原因を説明し、この導入確認に限り通常PRでの再試行をして構いません。
+mainへの反映、マージ、workflowの変更、git pushはしないでください。
+
+最後にPRのURLと、検証結果を示してください。

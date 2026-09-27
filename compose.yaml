@@ -1,0 +1,88 @@
+services:
+  worker:
+    build:
+      context: ./worker
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+        GO_IMAGE: ${GO_IMAGE:-golang:1.26-bookworm}
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: ${DEV_CPUS:-4}
+    mem_limit: ${DEV_MEMORY:-6g}
+    pids_limit: 512
+    volumes:
+      - workspace:/workspace
+      - worker-state:/state
+      - worker-home:/home/dev
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=1073741824,mode=1777
+    networks:
+      private: {}
+      worker-egress: {gw_priority: 1}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=3).read()"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  control:
+    build:
+      context: ./control
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+        TUNNEL_IMAGE: ${TUNNEL_IMAGE:-ghcr.io/openai/tunnel-client:v0.0.15}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 1
+    mem_limit: 1g
+    pids_limit: 128
+    environment:
+      GITHUB_APP_ID: ${GITHUB_APP_ID:?Run bash scripts/configure.sh first}
+      ALLOWED_REPOS: ${ALLOWED_REPOS:?Run bash scripts/configure.sh first}
+      CONTROL_PLANE_TUNNEL_ID: ${CONTROL_PLANE_TUNNEL_ID:?Run bash scripts/configure.sh first}
+      WORKER_URL: http://worker:8080
+    secrets: [github_app_key, tunnel_api_key]
+    volumes:
+      - control-state:/state
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=134217728,mode=1777
+    networks:
+      private: {}
+      control-egress: {gw_priority: 1}
+    depends_on:
+      worker: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz',timeout=3).read()"]
+      interval: 10s
+      timeout: 4s
+      retries: 12
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+# No host ports or Docker socket. The credentialed MCP speaks stdio inside control.
+# Worker commands can access the internet but cannot call a listening control MCP.
+networks:
+  private: {internal: true}
+  worker-egress: {}
+  control-egress: {}
+volumes:
+  workspace: {}
+  worker-state: {}
+  worker-home: {}
+  control-state: {}
+secrets:
+  github_app_key: {file: ./secrets/github-app.pem}
+  tunnel_api_key: {file: ./secrets/tunnel-api-key}
