@@ -1,7 +1,7 @@
 接続した「GitHub Dev Agent」のMCPを使って、導入確認をしてください。
 ChatGPT内蔵のコード実行環境や、別のGitHub接続ではなく、このMCPを使ってください。
 
-対象: mamama-dev/ai-sandbox-check
+対象: OWNER/ai-sandbox-check（OWNERを自分のユーザー名または組織名に置き換えてください）
 作業ID: connection-test
 
 最初にsystem_statusを確認してください。異常があれば、作業を進めず内容を説明してください。
