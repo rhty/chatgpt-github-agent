@@ -51,7 +51,10 @@ class FakeGitHub:
         if repo.lower() not in self.allowed: raise ValueError('Not allowed')
         return 'owner/repo'
     def app(self): return {'id':123,'slug':'test-agent'}
-    def download_source(self,repo,sha): return archive({'README.md':'# Original\n','old.txt':'old'})
+    def download_source(self,repo,sha,destination):
+        data=archive({'README.md':'# Original\n','old.txt':'old'})
+        destination.write(data)
+        return len(data)
     def page(self,repo,path,page=1):
         data=self.call(repo,'GET',path)
         return {'items':data[(page-1)*50:page*50],'next_page':page+1 if len(data)>=page*50 else None}
@@ -59,7 +62,8 @@ class FakeGitHub:
         self.validate(repo);self.calls.append((method,path,copy.deepcopy(body)))
         raw=unquote(urlsplit(path).path)
         if method=='GET' and path=='': return {'default_branch':'main','full_name':repo}
-        if method=='GET' and raw=='/commits/main': return {'sha':self.base_sha,'commit':{'tree':{'sha':self.base_tree}}}
+        if method=='GET' and raw=='/git/ref/heads/main': return {'object':{'sha':self.base_sha}}
+        if method=='GET' and raw=='/git/commits/'+self.base_sha: return {'sha':self.base_sha,'tree':{'sha':self.base_tree}}
         if raw.startswith('/git/ref/heads/') and method=='GET':
             branch=raw[len('/git/ref/heads/'):]
             if branch not in self.refs: raise APIError(404,'Not found')
@@ -113,6 +117,8 @@ class DirectWorker:
         self.ws=Workspace(root/'workspace');self.jobs=JobManager(self.ws,root/'jobs',max_jobs=1)
         self.repos=Repositories(self.ws.root,self.jobs)
     def health(self): return {'ok':True,'running_jobs':len(self.jobs.processes)}
+    def prepare_archive(self,task_id,source):
+        return self.repos.prepare_archive(task_id,source)
     def call(self,action,**args):
         if action=='prepare':return self.repos.prepare(**args)
         if action=='changes':return self.repos.changes(**args)

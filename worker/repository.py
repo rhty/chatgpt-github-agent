@@ -13,7 +13,16 @@ import threading
 from pathlib import Path, PurePosixPath
 
 MAX_FILE = 8*1024*1024
-MAX_TOTAL = 160*1024*1024
+CHUNK_SIZE = 256*1024
+
+def source_limit(name, default):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        raise ValueError(f'{name} must be a positive integer') from None
+    if value <= 0:
+        raise ValueError(f'{name} must be a positive integer')
+    return value*1024*1024
 ID = re.compile(r'[a-z0-9][a-z0-9-]{0,47}\Z')
 
 def safe_path(raw):
@@ -28,18 +37,21 @@ class Repositories:
     def __init__(self, root: Path, jobs):
         self.root, self.jobs = root, jobs
         self.lock = threading.RLock()
+        self.max_archive = source_limit('SOURCE_MAX_ARCHIVE_MIB', 512)
+        self.max_source_file = source_limit('SOURCE_MAX_FILE_MIB', 128)
+        self.max_source_total = source_limit('SOURCE_MAX_TOTAL_MIB', 2048)
 
     def path(self, task_id):
         if not isinstance(task_id,str) or not ID.fullmatch(task_id):
             raise ValueError('task_id: 1..48 lowercase letters/digits/hyphens')
         return self.root / 'tasks' / task_id / 'repo'
 
-    def git(self, p, *args):
+    def git(self, p, *args, timeout=60):
         env = {'PATH':os.getenv('PATH','/usr/bin:/bin'), 'HOME':'/tmp', 'LANG':'C.UTF-8',
                'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null','GIT_TERMINAL_PROMPT':'0'}
         proc = subprocess.run(['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false',
                                '-c','core.autocrlf=false','-C',str(p),*args],
-                              env=env, capture_output=True, timeout=60)
+                              env=env, capture_output=True, timeout=timeout)
         if proc.returncode:
             raise RuntimeError('Worker Git operation failed: '+proc.stderr.decode(errors='replace')[:500])
         return proc.stdout
@@ -49,21 +61,33 @@ class Repositories:
             return bool(self.jobs.processes)
 
     def prepare(self, task_id, archive_base64):
+        # Legacy small JSON RPC; production start_task uses the binary upload endpoint.
+        if len(archive_base64) > 64*1024*1024:
+            raise ValueError('Legacy archive RPC is limited to 48 MiB; use binary import')
+        blob = base64.b64decode(archive_base64, validate=True)
+        if len(blob) > 48*1024*1024:
+            raise ValueError('Legacy archive RPC is limited to 48 MiB; use binary import')
+        return self.prepare_archive(task_id, io.BytesIO(blob))
+
+    def prepare_archive(self, task_id, source):
         with self.lock:
             p = self.path(task_id)
             if p.is_dir():
                 return {'path':str(p),'reused':True, 'snapshot_sha':(p.parent / 'snapshot-sha').read_text().strip()}
             if self.busy():
                 raise ValueError('Finish running commands before preparing another task')
-            blob = base64.b64decode(archive_base64, validate=True)
-            if len(blob)>48*1024*1024:
-                raise ValueError('Compressed source archive is too large')
+            source.seek(0,2)
+            archive_size = source.tell()
+            source.seek(0)
+            if archive_size > self.max_archive:
+                raise ValueError(f'Compressed source: {archive_size} bytes exceeds '
+                                 f'SOURCE_MAX_ARCHIVE_MIB limit {self.max_archive} bytes')
             p.parent.mkdir(parents=True,exist_ok=True)
             tmp = Path(tempfile.mkdtemp(prefix='import-',dir=p.parent))
             total = 0
             names = set()
             try:
-                with tarfile.open(fileobj=io.BytesIO(blob),mode='r:gz') as tar:
+                with tarfile.open(fileobj=source,mode='r:gz') as tar:
                     for n,m in enumerate(tar):
                         if n>=25000:
                             raise ValueError('Source archive has too many entries')
@@ -81,27 +105,39 @@ class Repositories:
                             continue
                         if not m.isfile():
                             raise ValueError('This starter does not import symlinks, submodules, or special files')
+                        if m.size < 0 or m.size > self.max_source_file:
+                            raise ValueError(f'Source file {raw!r}: {m.size} bytes exceeds '
+                                             f'SOURCE_MAX_FILE_MIB limit {self.max_source_file} bytes')
                         total += m.size
-                        if m.size>MAX_FILE or total>MAX_TOTAL:
-                            raise ValueError('Source exceeds starter size limits')
+                        if total > self.max_source_total:
+                            raise ValueError(f'Expanded source at {raw!r}: {total} bytes exceeds '
+                                             f'SOURCE_MAX_TOTAL_MIB limit {self.max_source_total} bytes')
                         if raw=='.gitmodules':
                             raise ValueError('Git submodules are not supported by this starter')
                         stream = tar.extractfile(m)
                         if stream is None:
                             raise ValueError('Missing archive member')
-                        data = stream.read(MAX_FILE+1)
-                        if len(data)!=m.size:
-                            raise ValueError('Truncated source file')
-                        if data.startswith(b'version https://git-lfs.github.com/spec/v1\n'):
-                            raise ValueError('Git LFS pointers require a separate import implementation')
                         dest.parent.mkdir(parents=True,exist_ok=True)
-                        dest.write_bytes(data)
+                        written = 0
+                        with stream, dest.open('wb') as output:
+                            while True:
+                                data = stream.read(CHUNK_SIZE)
+                                if not data:
+                                    break
+                                if written == 0 and data.startswith(b'version https://git-lfs.github.com/spec/v1\n'):
+                                    raise ValueError('Git LFS pointers require a separate import implementation')
+                                written += len(data)
+                                if written > m.size:
+                                    raise ValueError('Source file exceeds declared size')
+                                output.write(data)
+                        if written != m.size:
+                            raise ValueError(f'Truncated source file: {raw!r}')
                         dest.chmod(0o755 if m.mode & 0o111 else 0o644)
                 self.git(tmp,'init','-q')
                 # The GitHub archive contains tracked files even when .gitignore matches them.
-                self.git(tmp,'add','--all','--force')
+                self.git(tmp,'add','--all','--force',timeout=300)
                 self.git(tmp,'-c','user.name=Local Snapshot','-c','user.email=snapshot@localhost',
-                         'commit','-q','--allow-empty','-m','Source snapshot (not pushed)')
+                         'commit','-q','--allow-empty','-m','Source snapshot (not pushed)',timeout=300)
                 sha = self.git(tmp,'rev-parse','HEAD').decode().strip()
                 (p.parent / 'snapshot-sha').write_text(sha)
                 os.replace(tmp,p)

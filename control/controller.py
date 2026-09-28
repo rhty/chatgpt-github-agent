@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import time
+import tempfile
 from pathlib import PurePosixPath
 from urllib.parse import quote, urlencode
 from net import APIError
@@ -41,7 +42,7 @@ def require_text(value, label, maximum=30000):
 
 def task_summary(t):
     keys=('task_id','repo','branch','base','base_sha','head_sha','path','pr_number','pr_url',
-          'created_at','last_published_at','status')
+          'created_at','last_published_at','status','preparation_stage','preparation_error','source_archive_bytes')
     return {k:t.get(k) for k in keys}
 
 class Controller:
@@ -79,7 +80,8 @@ class Controller:
             else:
                 metadata=self.gh.call(repo,'GET','')
                 base=metadata['default_branch']
-                commit=self.gh.call(repo,'GET','/commits/'+quote(base,safe=''))
+                ref=self.gh.call(repo,'GET','/git/ref/heads/'+quote(base,safe=''))
+                commit=self.gh.call(repo,'GET','/git/commits/'+ref['object']['sha'])
                 branch='ai/'+task_id
                 try:
                     self.gh.call(repo,'GET','/git/ref/heads/'+quote(branch,safe=''))
@@ -88,15 +90,30 @@ class Controller:
                 else:
                     raise ValueError('Remote ai/ branch already exists; choose another task_id')
                 t={'task_id':task_id,'repo':repo,'branch':branch,'base':base,
-                   'base_sha':commit['sha'],'base_tree':commit['commit']['tree']['sha'],
-                   'head_sha':commit['sha'],'head_tree':commit['commit']['tree']['sha'],
+                   'base_sha':commit['sha'],'base_tree':commit['tree']['sha'],
+                   'head_sha':commit['sha'],'head_tree':commit['tree']['sha'],
                    'created_at':time.time(),'status':'preparing','issue_number':issue_number,
                    'jobs':{},'replies':{},'pr_number':None,'pr_url':None}
                 self.store.save(t)
-            source=self.gh.download_source(repo,t['base_sha'])
-            imported=self.worker.call('prepare',task_id=task_id,archive_base64=base64.b64encode(source).decode())
-            t.update(path=imported['path'],snapshot_sha=imported['snapshot_sha'],status='ready')
+            t.update(preparation_stage='download',preparation_error=None,source_archive_bytes=None)
             self.store.save(t)
+            try:
+                staging=self.store.root/'source-downloads'
+                staging.mkdir(mode=0o700,exist_ok=True)
+                # TemporaryFile is removed on both success and failure. Never stage in /tmp (tmpfs).
+                with tempfile.TemporaryFile(dir=staging) as source:
+                    size=self.gh.download_source(repo,t['base_sha'],source)
+                    t.update(source_archive_bytes=size,preparation_stage='worker_import')
+                    self.store.save(t)
+                    source.seek(0)
+                    imported=self.worker.prepare_archive(task_id,source)
+                t.update(path=imported['path'],snapshot_sha=imported['snapshot_sha'],status='ready',
+                         preparation_stage='complete',preparation_error=None)
+                self.store.save(t)
+            except Exception as exc:
+                t['preparation_error']=str(exc)[:1200]
+                self.store.save(t)
+                raise
             return task_summary(t)
 
     def _task(self,task_id):
@@ -107,7 +124,9 @@ class Controller:
 
     def get_task_status(self,task_id):
         with self.store.lock():
-            t=self._task(task_id)
+            # Preparation failures must remain inspectable, without allowing edits before ready.
+            t=self.store.load(task_id)
+            self.gh.validate(t['repo'])
             result=task_summary(t)
             result['jobs']=list(t['jobs'].values())[-30:]
             try: result['worker']=self.worker.health()
