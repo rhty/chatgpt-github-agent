@@ -4,6 +4,7 @@ import json
 import os
 import time
 import signal
+import tempfile
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from engine import Workspace, JobManager
@@ -61,7 +62,41 @@ class Handler(BaseHTTPRequestHandler):
                             'github_key_present':Path('/run/secrets/github_app_key').exists(),
                             'tunnel_key_present':Path('/run/secrets/tunnel_api_key').exists(),
                             'docker_socket_present':Path('/var/run/docker.sock').exists()})
+    def receive_archive(self):
+        task_id=self.path.removeprefix('/prepare/')
+        repos.path(task_id)  # Validate before creating a temporary file or reading the body.
+        if self.headers.get('Transfer-Encoding'):
+            raise ValueError('Binary archive upload requires Content-Length, not chunked transfer')
+        size=int(self.headers.get('Content-Length','0'))
+        if not 0 < size <= repos.max_archive:
+            raise ValueError(f'Compressed source upload: {size} bytes; '
+                             f'SOURCE_MAX_ARCHIVE_MIB limit {repos.max_archive} bytes')
+        with repos.lock:
+            if repos.busy():
+                raise ValueError('Finish running commands before preparing another task')
+            staging=jobs.state.parent/'source-imports'
+            staging.mkdir(mode=0o700,exist_ok=True)
+            self.connection.settimeout(120)
+            with tempfile.TemporaryFile(dir=staging) as source:
+                remaining=size
+                while remaining:
+                    data=self.rfile.read(min(256*1024,remaining))
+                    if not data:
+                        raise ValueError('Truncated source upload; retry the same task_id')
+                    source.write(data)
+                    remaining-=len(data)
+                source.seek(0)
+                return repos.prepare_archive(task_id,source)
+
     def do_POST(self):
+        if self.path.startswith('/prepare/'):
+            try:
+                self.send_json(200,{'result':self.receive_archive()})
+            except (ValueError,KeyError,TypeError,RuntimeError,OSError) as exc:
+                self.send_json(400,{'error':str(exc)[:1200]})
+            except Exception:
+                self.send_json(500,{'error':'Source import failed unexpectedly'})
+            return
         if self.path!='/rpc':
             self.send_json(404,{'error':'Not found'}); return
         try:

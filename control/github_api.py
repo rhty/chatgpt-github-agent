@@ -63,12 +63,14 @@ class GitHub:
         self.tokens[repo] = (issued['token'], time.time()+3000)
         return issued['token']
 
-    def call(self, repo, method, path, body=None, *, binary=False, limit=24*1024*1024):
+    def call(self, repo, method, path, body=None, *, binary=False, limit=24*1024*1024,
+             sink=None, label='GitHub API response', timeout=60):
         repo = self.validate(repo)
         if (path and not path.startswith('/')) or '://' in path:
             raise ValueError('Expected repository-relative API path')
         return request(method, f'https://api.github.com/repos/{repo}{path}',
-                       headers=self.headers(self.token(repo)), body=body, binary=binary, limit=limit)
+                       headers=self.headers(self.token(repo)), body=body, binary=binary, limit=limit,
+                       sink=sink, label=label, timeout=timeout)
 
     def page(self, repo, path, page=1):
         if not isinstance(page,int) or not 1 <= page <= 1000:
@@ -79,7 +81,15 @@ class GitHub:
             raise ValueError('Expected a list response')
         return {'items':data, 'next_page':page+1 if len(data)==50 else None}
 
-    def download_source(self, repo, sha):
+    def download_source(self, repo, sha, destination):
         if not re.fullmatch(r'[0-9a-f]{40}',sha):
             raise ValueError('Invalid source commit SHA')
-        return self.call(repo,'GET',f'/tarball/{sha}', binary=True, limit=48*1024*1024)
+        try:
+            mib = int(os.getenv('SOURCE_MAX_ARCHIVE_MIB', '512'))
+        except ValueError:
+            raise ValueError('SOURCE_MAX_ARCHIVE_MIB must be a positive integer') from None
+        if mib <= 0:
+            raise ValueError('SOURCE_MAX_ARCHIVE_MIB must be a positive integer')
+        return self.call(repo,'GET',f'/tarball/{sha}', binary=True, limit=mib*1024*1024,
+                         sink=destination, timeout=600,
+                         label=f'Repository archive {repo}@{sha[:12]} (SOURCE_MAX_ARCHIVE_MIB)')

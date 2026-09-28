@@ -15,6 +15,10 @@ services:
     cpus: ${DEV_CPUS:-4}
     mem_limit: ${DEV_MEMORY:-6g}
     pids_limit: 512
+    environment:
+      SOURCE_MAX_ARCHIVE_MIB: ${SOURCE_MAX_ARCHIVE_MIB:-512}
+      SOURCE_MAX_TOTAL_MIB: ${SOURCE_MAX_TOTAL_MIB:-2048}
+      SOURCE_MAX_FILE_MIB: ${SOURCE_MAX_FILE_MIB:-128}
     volumes:
       - workspace:/workspace
       - worker-state:/state
@@ -53,6 +57,7 @@ services:
       ALLOWED_REPOS: ${ALLOWED_REPOS:?Run bash scripts/configure.sh first}
       CONTROL_PLANE_TUNNEL_ID: ${CONTROL_PLANE_TUNNEL_ID:?Run bash scripts/configure.sh first}
       WORKER_URL: http://worker:8080
+      SOURCE_MAX_ARCHIVE_MIB: ${SOURCE_MAX_ARCHIVE_MIB:-512}
     secrets: [github_app_key, tunnel_api_key]
     volumes:
       - control-state:/state
