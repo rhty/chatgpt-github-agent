@@ -29,8 +29,10 @@ for ((i=0;i<60;i++)); do
 done
 if [[ "$ready" != 1 ]]; then
   echo 'トンネルの接続を確認できませんでした。診断結果を表示します（キー本体は表示しません）。'
+  # Doctor probes a new bind; avoid colliding with the running daemon on port 8080.
   docker compose exec -T control /usr/bin/tunnel-client doctor \
-    --control-plane.api-key=file:/run/secrets/tunnel_api_key --explain || true
+    --control-plane.api-key=file:/run/secrets/tunnel_api_key \
+    --health.listen-addr=127.0.0.1:0 --explain || true
   exit 1
 fi
 printf '\nAGENT_READY\nChatGPTのPlugins画面で、このTunnelを接続してください。\n'

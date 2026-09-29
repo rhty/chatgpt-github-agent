@@ -11,6 +11,8 @@ else
 fi
 echo '--- Tunnel readiness ---'
 docker compose exec -T control python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/readyz',timeout=4).read().decode()[:4000])" || true
-echo '--- Tunnel diagnostic ---'
+echo '--- Tunnel local preflight (separate from live readiness above) ---'
+# Doctor probes a new bind; avoid colliding with the running daemon on port 8080.
 docker compose exec -T control /usr/bin/tunnel-client doctor \
-  --control-plane.api-key=file:/run/secrets/tunnel_api_key --explain || true
+  --control-plane.api-key=file:/run/secrets/tunnel_api_key \
+  --health.listen-addr=127.0.0.1:0 --explain || true
