@@ -15,9 +15,9 @@ COPY requirements.txt /opt/control/requirements.txt
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r /opt/control/requirements.txt
 COPY *.py /opt/control/
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp \
-    MCP_COMMAND="/opt/venv/bin/python /opt/control/mcp_server.py" \
+    MCP_SERVER_URL="http://127.0.0.1:8081/mcp" \
     HEALTH_LISTEN_ADDR=127.0.0.1:8080 LOG_LEVEL=info LOG_FORMAT=json
 USER agent
 WORKDIR /opt/control
-ENTRYPOINT ["/usr/bin/tunnel-client", "run"]
-CMD ["--control-plane.api-key=file:/run/secrets/tunnel_api_key", "--mcp.max-concurrent-requests=1", "--mcp.stdio-send-initialized-notification=true"]
+ENTRYPOINT ["/opt/venv/bin/python", "/opt/control/runtime.py"]
+CMD ["--control-plane.api-key=file:/run/secrets/tunnel_api_key", "--mcp.max-concurrent-requests=1"]

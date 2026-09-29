@@ -23,7 +23,8 @@ OpenAI Secure MCP Tunnel
   │ ホスト側から外向き接続
   ▼
 control コンテナ
-  ├─ tunnel-client → MCPサーバー（stdio）
+  ├─ runtime.pyがMCPサーバーとtunnel-clientを監督
+  ├─ tunnel-client → MCPサーバー（loopback限定のstateless HTTP）
   ├─ GitHub App認証・GitHub API操作
   └─ タスク・PRの状態管理
        │ 内部HTTP
@@ -35,8 +36,10 @@ worker コンテナ
 
 `control`はリポジトリのコードを実行せず、`worker`にはGitHub App秘密鍵やTunnelのAPIキーを渡しません。
 ホストのホームディレクトリ、既存のリポジトリ、Dockerソケットはマウントせず、ホスト向けのポートも公開しません。
+MCPはcontrol内の`127.0.0.1:8081`に限定し、workerから呼べる待ち受けにはしません。
 
 変更の公開は`control`がGitHub Git Database APIで行います。`worker`にpush用のトークンを持たせる方式ではありません。
+旧stdio構成からの変更理由と適用方法は[接続の切断と復旧](docs/connection-recovery.md)を参照してください。
 
 ## 導入
 
@@ -110,12 +113,14 @@ python3 -m unittest discover -s tests -v
 ```
 
 GitHub APIはテスト内で模擬します。実際のGitHub App、MCP、Tunnelを通した導入確認は[VALIDATION.md](VALIDATION.md)の手順で別途行います。
+HTTP MCPの回復テストには`control/requirements.txt`のSDKが必要です。実行方法は[接続の切断と復旧](docs/connection-recovery.md#検証範囲)を参照してください。
 
 ## ドキュメント
 
 | 文書 | 内容 |
 |---|---|
 | [セットアップ](docs/setup.md) | ChatGPTの事前確認、GitHub App、Tunnel、起動、接続テスト |
+| [接続の切断と復旧](docs/connection-recovery.md) | loopback HTTPへの移行、適用・再開方法、検証範囲 |
 | [セキュリティ](SECURITY.md) | 認証情報、実行環境、公開操作、ネットワークの境界 |
 | [検証](VALIDATION.md) | 自動テストと実接続チェック |
 | [プロンプト](prompts/) | 接続テスト、レビュー対応、実装依頼のテンプレート |

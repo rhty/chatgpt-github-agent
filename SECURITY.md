@@ -8,7 +8,7 @@ GitHub App秘密鍵とOpenAI TunnelキーはMacの`secrets/`からcontrolにだ�
 
 controlは固定のコードを読み取り専用イメージから実行し、リポジトリ由来のコード・スクリプト・Git hooksを実行しません。任意コマンド実行はworkerのみに転送します。control上のopensslはApp JWTを署名する固定の呼び出しに限定しています。
 
-controlのMCPはstdioでtunnel-clientと通信します。workerがアクセスできる待ち受けHTTP MCPはありません。controlの健康確認サーバーはloopbackに限定しています。workerのRPCはポートをホストに公開しません。
+controlのMCPは同じコンテナの`127.0.0.1:8081`だけでstateless Streamable HTTPを提供し、tunnel-clientから接続します。別コンテナのworkerがアクセスできる待ち受けHTTP MCPにはしていません。controlの健康確認サーバーもloopbackに限定しています。workerのRPCも含め、これらのポートをホストへ公開しません。MCPの認証は追加していないため、0.0.0.0への変更、ネットワーク名前空間の共有、ポート公開をしないでください。
 
 **これは認証情報の保管と実行場所の分離であって、すべての攻撃の防止ではありません。** controlや依存ライブラリ、コンテナランタイムに脆弱性があれば影響を受けます。秘密鍵ファイルはMac上で暗号化保管されているわけではありません。
 
@@ -51,6 +51,8 @@ GitHub AppやTunnelの資格情報をworkerの環境変数、ファイル、コ�
 ## 日常確認と停止時の限界
 
 ジョブとPRの情報はMCPで取得できます。Mac/Docker/Tunnel全体が停止した場合、その経路で接続しているChatGPTからは診断できません。`scripts/doctor.sh`はこの場合の手動診断です。
+
+HTTP要求がタイムアウトしても、処理の取消しや副作用がなかったことは保証されません。再試行前に既存タスク・ジョブ・PRの状態を確認し、同じ論理操作のrequest_idを維持してください。プロセス監督は書き込み要求を自動再送しません。
 
 GitHubコメントでAIを自動起動するWebhook、通常のChatを外部から再開する仕組み、常駐モデル推論ループはありません。監視結果の定期自動投稿も未実装です。
 

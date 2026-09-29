@@ -7,7 +7,7 @@ docker info >/dev/null 2>&1 || { echo 'OrbStackを起動してから、もう一
 printf '\n開発環境と制御環境をビルドします。初回はイメージのダウンロードがあります。\n'
 docker compose config --quiet
 docker compose build
-# Only one stdio tunnel instance may own the same Tunnel ID.
+# Stop the previous runtime before replacing its local MCP server and tunnel.
 docker compose stop control >/dev/null 2>&1 || true
 docker compose up -d worker
 ready=0
@@ -35,5 +35,7 @@ if [[ "$ready" != 1 ]]; then
     --health.listen-addr=127.0.0.1:0 --explain || true
   exit 1
 fi
+printf '\n常駐中のHTTP MCPの初期化とツール一覧を確認します。\n'
+docker compose exec -T control /opt/venv/bin/python /opt/control/http_smoke_test.py
 printf '\nAGENT_READY\nChatGPTのPlugins画面で、このTunnelを接続してください。\n'
 printf 'このターミナルは閉じて大丈夫です。MacとOrbStackは起動したままにしてください。\n'

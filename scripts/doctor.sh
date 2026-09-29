@@ -11,6 +11,8 @@ else
 fi
 echo '--- Tunnel readiness ---'
 docker compose exec -T control python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/readyz',timeout=4).read().decode()[:4000])" || true
+echo '--- Live HTTP MCP handshake / tools ---'
+docker compose exec -T control /opt/venv/bin/python /opt/control/http_smoke_test.py || true
 echo '--- Tunnel local preflight (separate from live readiness above) ---'
 # Doctor probes a new bind; avoid colliding with the running daemon on port 8080.
 docker compose exec -T control /usr/bin/tunnel-client doctor \
