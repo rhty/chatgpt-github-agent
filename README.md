@@ -55,9 +55,11 @@ Mac + OrbStackを想定しています。Docker Composeは2.33.1以降が必要�
 ```bash
 git clone https://github.com/rhty/chatgpt-github-agent.git
 cd chatgpt-github-agent
-bash scripts/configure.sh
+bash scripts/configure.sh --project-name my-github-agent
 bash scripts/start.sh
 ```
+
+環境名は`--project-name`で指定し、組織ごとに別のclone先・鍵・Tunnelを用意します。[複数環境のセットアップ](docs/multiple-environments.md)を参照してください。既存環境の設定変更は不要です。
 
 `AGENT_READY`が表示されたら、ChatGPTのカスタムMCP接続で対象のTunnelを選択します。
 その後、テスト用リポジトリでPR作成とコメント対応を確認します。

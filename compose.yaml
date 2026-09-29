@@ -77,8 +77,8 @@ services:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
 
-# No host ports or Docker socket. The credentialed MCP speaks stdio inside control.
-# Worker commands can access the internet but cannot call a listening control MCP.
+# No host ports or Docker socket. MCP listens only on control loopback (127.0.0.1:8081).
+# Worker commands have internet access but cannot reach the control loopback MCP listener.
 networks:
   private: {internal: true}
   worker-egress: {}
