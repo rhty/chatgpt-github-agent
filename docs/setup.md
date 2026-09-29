@@ -112,7 +112,7 @@ git clone https://github.com/rhty/chatgpt-github-agent.git
 cd chatgpt-github-agent
 docker version
 docker compose version
-bash scripts/configure.sh
+bash scripts/configure.sh --project-name my-github-agent
 ```
 
 Composeは`gw_priority`を使用するため[2.33.1以降](https://docs.docker.com/reference/compose-file/services/#gw_priority)が必要です。
@@ -120,13 +120,15 @@ Composeは`gw_priority`を使用するため[2.33.1以降](https://docs.docker.c
 
 | 入力 | 内容 |
 |---|---|
+| Docker環境名 | `--project-name`で指定。省略時は対話入力。小文字英数字で始め、小文字英数字・`-`・`_`のみ |
 | GitHub App ID | 数字のApp ID |
-| 最初のリポジトリ | `OWNER/ai-sandbox-check`。省略不可 |
+| 許可リポジトリ | `OWNER/ai-sandbox-check`。複数は`OWNER/core,OWNER/console`のように空白なしでカンマ区切り。省略不可 |
 | Tunnel ID | 作成した`tunnel_...` |
 | 秘密鍵 | macOSではファイル選択画面から`.pem`を指定。他の環境ではパスを入力 |
 | Tunnel実行用APIキー | 非表示で入力 |
 
-`CONFIG_SAVED`で設定保存が完了します。既存の`.env`は上書きしません。
+`CONFIG_SAVED`と保存した`COMPOSE_PROJECT_NAME`が表示されれば設定保存が完了です。既存の`.env`・`secrets/`は上書きしません。
+別組織の追加には[複数環境のセットアップ](multiple-environments.md)を参照してください。
 
 ```text
 .env                       ID・許可リポジトリ・リソース設定
@@ -140,7 +142,8 @@ CPU・メモリ・言語のバージョンを変更する場合は`.env`を編�
 ## 6. 起動する
 
 同じTunnel IDで動く別のクライアントがあれば、先に停止してください。
-この構成はstdioを使用します。[公式クライアントの構成要件](https://github.com/openai/tunnel-client/blob/master/docs/configuration.md)に従い、同じTunnelに複数のクライアントを接続しません。
+本番のMCP接続はcontrolコンテナ内のloopback HTTP（`127.0.0.1:8081`）です。
+別環境には別のTunnel IDを使い、同じTunnelを誤って共用しないでください。
 
 ```bash
 bash scripts/start.sh
@@ -151,9 +154,11 @@ bash scripts/start.sh
 ```text
 SETUP_CHECK_OK
 MCP_STDIO_CHECK_OK 16 tools
+MCP_HTTP_CHECK_OK 16 tools
 AGENT_READY
 ```
 
+`MCP_STDIO_CHECK_OK`は互換アダプターの単独テストです。`MCP_HTTP_CHECK_OK`は常駐HTTP MCPへの初期化・ツール列挙を確認します。
 `AGENT_READY`は起動確認の完了を示します。GitHubへの書き込み成功を確認したものではありません。
 コンテナはバックグラウンドで動きますが、ホスト、Docker、ネットワークは稼働している必要があります。
 
